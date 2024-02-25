@@ -1,0 +1,4 @@
+- Add file system navigation
+- File manipulation
+- Open path programs
+- Open local programs
