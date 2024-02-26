@@ -1,4 +1,4 @@
-- Add file system navigation
+x Add file system navigation
 - File manipulation
 - Open path programs
 - Open local programs

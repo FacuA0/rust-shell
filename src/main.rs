@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::env;
 
 fn main() {
-    let version_number = "0.0.3";
+    let version_number = "0.0.4";
     let mut stdout = io::stdout();
     let mut path = env::current_dir().expect("Working directory couldn't be determined.");
 
@@ -35,43 +35,25 @@ fn main() {
                 change_directory(&mut path, new_path);
             },
             "ls" => {
-                let elements = path.read_dir();
-                if elements.is_err() {
-                    println!("ls: There was an error listing the elements: {}", elements.unwrap_err());
-                    continue;
-                }
-
-                println!("Contents of {:?}:", path.file_name().unwrap());
-
-                for element in elements.unwrap() {
-                    match element {
-                        Ok(item) => {
-                            let file_name = item.file_name().to_str().unwrap().to_owned();
-                            let file_type = item.file_type().unwrap();
-                            if file_type.is_dir() {
-                                println!("{file_name} <dir>");
-                            }
-                            else if file_type.is_file() {
-                                println!("{file_name} <file>");
-                            }
-                            else if file_type.is_symlink() {
-                                println!("{file_name} <link>");
-                            }
-                            else {
-                                println!("{file_name} <unknown>");
-                            }
-                        },
-                        Err(e) => println!("Error: {}", e)
-                    }
-                }
+                list_elements(&mut path);
             },
+            "help" => {
+                println!("");
+                println!("General commands:");
+                println!("help      Prints help information");
+                println!("cd <dir>  Changes from a directory to another");
+                println!("ls        Shows all elements in a directory");
+                println!("version   Shows the version information");
+                println!("exit      Exits the program");
+                println!("");
+            }
             "exit" => break,
             "version" => {
                 println!("Rust Shell {version_number}");
                 println!("Author: @FacuA0\n");
             },
             "" => (),
-            _ => println!("Command '{command}' not found."),
+            _ => println!("Command '{command}' not found. Type 'help' to show available commands."),
         }
     }
     
@@ -79,32 +61,74 @@ fn main() {
 }
 
 fn change_directory(path: &mut PathBuf, new_path: String) {
-    if new_path == "." {
-        return;
-    }
-
-    if new_path == ".." {
-        let parent_path = path.parent();
-        if parent_path.is_none() {
-            return;
-        }
-
-        *path = parent_path.unwrap().to_path_buf();
-        match env::set_current_dir(path.clone()) {
-            Err(e) => println!("There was an error while changing directories: {}", e),
-            _ => return
-        };
-    }
-
     let moving_path = path.join(PathBuf::from(new_path));
     if !moving_path.exists() || !moving_path.is_dir() {
         println!("cd: Directory doesn't exist.");
         return;
     }
 
-    *path = moving_path;
-    match env::set_current_dir(path.clone()) {
+    let final_path = moving_path.canonicalize().unwrap();
+    match env::set_current_dir(final_path.clone()) {
         Err(e) => println!("cd: There was an error while changing directories: {}", e),
-        _ => ()
+        _ => {
+            *path = final_path;
+        }
     };
+}
+
+fn list_elements(path: &mut PathBuf) {
+    let elements = path.read_dir();
+    if elements.is_err() {
+        println!("ls: There was an error listing the elements: {}", elements.unwrap_err());
+        return;
+    }
+
+    println!("\nContents of {:?}:", path.file_name().unwrap());
+
+    for element in elements.unwrap() {
+        match element {
+            Ok(item) => {
+                let file_name = item.file_name().to_str().unwrap().to_owned();
+                let metadata = item.metadata().unwrap();
+                let file_type = 
+                    if metadata.is_dir() {"<dir> "} 
+                    else if metadata.is_file() {"<file>"}
+                    else if metadata.is_symlink() {"<link>"}
+                    else {"<unknown>"};
+
+                let size = if metadata.is_file() {
+                    format!("- ({})", format_file_length(metadata.len()))
+                } else {"".to_owned()};
+                
+                println!(" {file_type} {file_name} {size}");
+            },
+            Err(e) => println!("Error: {}", e)
+        }
+    }
+
+    println!("");
+}
+
+fn format_file_length(length: u64) -> String {
+    if length < 1000 {
+        format!("{} bytes", length)
+    }
+    else if length < 1_000_000 {
+        format!("{} KB", length / 1000)
+    }
+    else if length < 1_000_000_000 {
+        format!("{} MB", length / 1_000_000)
+    }
+    else if length < 1_000_000_000_000 {
+        format!("{} GB", length / 1_000_000_000)
+    }
+    else if length < 1_000_000_000_000_000 {
+        format!("{} TB", length / 1_000_000_000_000)
+    }
+    else if length < 1_000_000_000_000_000_000 {
+        format!("{} PB", length / 1_000_000_000_000_000)
+    }
+    else {
+        format!("{} EB", length / 1_000_000_000_000_000_000)
+    }
 }
