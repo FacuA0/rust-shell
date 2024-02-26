@@ -1,9 +1,10 @@
+use std::fs::File;
 use std::io::{self, Write};
-use std::path::PathBuf;
-use std::env;
+use std::path::{Component, PathBuf};
+use std::{env, fs};
 
 fn main() {
-    let version_number = "0.0.4";
+    let version_number = "0.0.5";
     let mut stdout = io::stdout();
     let mut path = env::current_dir().expect("Working directory couldn't be determined.");
 
@@ -24,7 +25,7 @@ fn main() {
         match command {
             "cd" => {
                 if parts.len() < 2 {
-                    println!("cd: There's no parameter.");
+                    println!("cd: There's no path parameter.");
                     continue;
                 }
                 
@@ -37,12 +38,74 @@ fn main() {
             "ls" => {
                 list_elements(&mut path);
             },
+            "md" => {
+                if parts.len() < 2 {
+                    println!("md: There's no name parameter.");
+                    continue;
+                }
+                
+                let mut arg = parts.clone();
+                arg.remove(0);
+                let name = arg.join(" ");
+
+                let new_path = PathBuf::from(name.clone());
+                if new_path.components().count() > 1 {
+                    println!("md: Only a single directory at a time can be created.");
+                    continue;
+                }
+                
+                if new_path.file_name().is_none() || !new_path.starts_with(new_path.file_name().unwrap()) {
+                    println!("md: Invalid directory.");
+                    continue;
+                }
+
+                let new_path = path.join(new_path);
+
+                match fs::create_dir(new_path) {
+                    Ok(_) => println!("md: {name} created succesfully."),
+                    Err(e) => println!("md: There was an error creating the directory: {}", e)
+                }
+            },
+            "touch" => {
+                if parts.len() < 2 {
+                    println!("touch: There's no name parameter.");
+                    continue;
+                }
+                
+                let mut arg = parts.clone();
+                arg.remove(0);
+                let name = arg.join(" ");
+
+                let new_path = PathBuf::from(name.clone());
+                if new_path.components().count() > 1 {
+                    println!("touch: The file name must not contain paths.");
+                    continue;
+                }
+                
+                if new_path.file_name().is_none() || !new_path.starts_with(new_path.file_name().unwrap()) {
+                    println!("touch: Invalid file name.");
+                    continue;
+                }
+
+                let new_path = path.join(new_path);
+
+                if new_path.exists() {
+                    continue;
+                }
+
+                match File::create(new_path) {
+                    Ok(_) => println!("touch: File '{name}' created."),
+                    Err(e) => println!("touch: An error ocurred while creating the file: {}", e)
+                }
+            },
             "help" => {
                 println!("");
                 println!("General commands:");
-                println!("help      Prints help information");
-                println!("cd <dir>  Changes from a directory to another");
+                println!("cd <dir>  Changes the current directory to the one specified");
+                println!("help      Shows the available commands");
                 println!("ls        Shows all elements in a directory");
+                println!("md        Creates a directory");
+                println!("touch     Creates a new file");
                 println!("version   Shows the version information");
                 println!("exit      Exits the program");
                 println!("");
