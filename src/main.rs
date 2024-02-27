@@ -1,10 +1,10 @@
 use std::fs::File;
 use std::io::{self, Write};
-use std::path::{Component, PathBuf};
+use std::path::{Component, PathBuf, Prefix};
 use std::{env, fs};
 
 fn main() {
-    let version_number = "0.0.5";
+    let version_number = "0.0.6";
     let mut stdout = io::stdout();
     let mut path = env::current_dir().expect("Working directory couldn't be determined.");
 
@@ -21,93 +21,44 @@ fn main() {
         io::stdin().read_line(&mut value).unwrap();
     
         let parts: Vec<&str> = value.trim().split(" ").collect();
+
         let command = parts[0];
+        let mut args = parts.clone();
+        args.remove(0);
+
         match command {
             "cd" => {
-                if parts.len() < 2 {
+                if args.len() < 1 {
                     println!("cd: There's no path parameter.");
                     continue;
                 }
                 
-                let mut arg = parts.clone();
-                arg.remove(0);
-                let new_path = arg.join(" ");
-
+                let new_path = args.join(" ");
                 change_directory(&mut path, new_path);
             },
             "ls" => {
                 list_elements(&mut path);
             },
             "md" => {
-                if parts.len() < 2 {
-                    println!("md: There's no name parameter.");
-                    continue;
-                }
-                
-                let mut arg = parts.clone();
-                arg.remove(0);
-                let name = arg.join(" ");
-
-                let new_path = PathBuf::from(name.clone());
-                if new_path.components().count() > 1 {
-                    println!("md: Only a single directory at a time can be created.");
-                    continue;
-                }
-                
-                if new_path.file_name().is_none() || !new_path.starts_with(new_path.file_name().unwrap()) {
-                    println!("md: Invalid directory.");
-                    continue;
-                }
-
-                let new_path = path.join(new_path);
-
-                match fs::create_dir(new_path) {
-                    Ok(_) => println!("md: {name} created succesfully."),
-                    Err(e) => println!("md: There was an error creating the directory: {}", e)
-                }
+                make_directory(&mut path, args);
             },
             "touch" => {
-                if parts.len() < 2 {
-                    println!("touch: There's no name parameter.");
-                    continue;
-                }
-                
-                let mut arg = parts.clone();
-                arg.remove(0);
-                let name = arg.join(" ");
-
-                let new_path = PathBuf::from(name.clone());
-                if new_path.components().count() > 1 {
-                    println!("touch: The file name must not contain paths.");
-                    continue;
-                }
-                
-                if new_path.file_name().is_none() || !new_path.starts_with(new_path.file_name().unwrap()) {
-                    println!("touch: Invalid file name.");
-                    continue;
-                }
-
-                let new_path = path.join(new_path);
-
-                if new_path.exists() {
-                    continue;
-                }
-
-                match File::create(new_path) {
-                    Ok(_) => println!("touch: File '{name}' created."),
-                    Err(e) => println!("touch: An error ocurred while creating the file: {}", e)
-                }
+                create_file(&mut path, args);
+            },
+            "rm" => {
+                remove_element(&mut path, args);
             },
             "help" => {
                 println!("");
                 println!("General commands:");
-                println!("cd <dir>  Changes the current directory to the one specified");
-                println!("help      Shows the available commands");
-                println!("ls        Shows all elements in a directory");
-                println!("md        Creates a directory");
-                println!("touch     Creates a new file");
-                println!("version   Shows the version information");
-                println!("exit      Exits the program");
+                println!("cd <dir>       Changes the current directory to the one specified");
+                println!("help           Shows the available commands");
+                println!("ls             Shows all elements in a directory");
+                println!("md <dir>       Creates a directory");
+                println!("touch <file>   Creates a new file");
+                println!("rm [-r] <dir>  Removes an element");
+                println!("version        Shows the version information");
+                println!("exit           Exits the program");
                 println!("");
             }
             "exit" => break,
@@ -123,14 +74,154 @@ fn main() {
     println!("Exit");
 }
 
+fn make_directory(path: &mut PathBuf, args: Vec<&str>) {
+    if args.len() < 1 {
+        println!("md: There's no name parameter.");
+        ()
+    }
+    
+    let name = args.join(" ");
+
+    let new_path = PathBuf::from(name.clone());
+    if new_path.components().count() > 1 {
+        println!("md: Only a single directory can be created at a time.");
+        ()
+    }
+    
+    if new_path.file_name().is_none() || !new_path.starts_with(new_path.file_name().unwrap()) {
+        println!("md: Invalid directory.");
+        ()
+    }
+
+    let new_path = path.join(new_path);
+
+    match fs::create_dir(new_path) {
+        Ok(_) => (),
+        Err(e) => println!("md: There was an error creating the directory: {}", e)
+    }
+}
+
+fn create_file(path: &mut PathBuf, args: Vec<&str>) {
+    if args.len() < 1 {
+        println!("touch: There's no name parameter.");
+        ()
+    }
+    
+    let name = args.join(" ");
+
+    let new_path = PathBuf::from(name.clone());
+    if new_path.components().count() > 1 {
+        println!("touch: The file name must not contain paths.");
+        ()
+    }
+    
+    let file_name = new_path.file_name();
+    if file_name.is_none() || !new_path.starts_with(file_name.unwrap()) {
+        println!("touch: Invalid file name.");
+        ()
+    }
+
+    let new_path = path.join(new_path);
+    if new_path.exists() {
+        ()
+    }
+
+    match File::create(new_path) {
+        Ok(_) => (),
+        Err(e) => println!("touch: An error ocurred while creating the file: {}", e)
+    }
+}
+
+fn remove_element(path: &mut PathBuf, args: Vec<&str>) {
+    if args.len() < 1 {
+        println!("rm: There are no parameters.");
+        ()
+    }
+
+    let mut recursive = false;
+    let mut dest_path: Vec<&str> = vec![];
+    
+    let mut flags = true;
+    for arg in args {
+        if flags {
+            let go_next = match arg {
+                "-r" => { recursive = true; true },
+                _ => { flags = false; false },
+            };
+
+            if go_next {continue};
+        }
+
+        dest_path.push(arg);
+    }
+
+    // Still in flags mode - never got a path
+    if flags {
+        println!("rm: There's no path parameter.");
+        ()
+    }
+
+    let dest_path = path.join(PathBuf::from(dest_path.join(" ")));
+
+    if path.starts_with(&dest_path) {
+        println!("rm: The current working directory is inside of the one being removed.");
+        ()
+    }
+    
+    if !path.exists() {
+        println!("rm: The location doesn't exist.");
+        ()
+    }
+
+    if dest_path.is_file() {
+        match fs::remove_file(dest_path) {
+            Ok(_) => (),
+            Err(e) => println!("rm: The file couldn't be removed: {}", e)
+        }
+        return;
+    }
+
+    if recursive {
+        match fs::remove_dir_all(dest_path) {
+            Ok(_) => (),
+            Err(e) => println!("rm: The tree couldn't be removed: {}", e)
+        }
+    }
+    else {
+        match fs::remove_dir(dest_path) {
+            Ok(_) => (),
+            Err(e) => println!("rm: The directory couldn't be removed: {}", e)
+        }
+    }
+}
+
 fn change_directory(path: &mut PathBuf, new_path: String) {
     let moving_path = path.join(PathBuf::from(new_path));
     if !moving_path.exists() || !moving_path.is_dir() {
         println!("cd: Directory doesn't exist.");
-        return;
+        ()
     }
 
-    let final_path = moving_path.canonicalize().unwrap();
+    let canonical = moving_path.canonicalize().unwrap();
+    let mut final_path = PathBuf::new();
+
+    // Removing verbatim (extended) prefix from Windows paths (\\?\)
+    for component in canonical.components() {
+        match component {
+            Component::Prefix(prefix) => {
+                let element = match prefix.kind() {
+                    Prefix::Verbatim(name) => name.to_str().unwrap().to_owned(),
+                    Prefix::VerbatimUNC(server, folder) => format!("\\\\{}\\{}", server.to_str().unwrap(), folder.to_str().unwrap()),
+                    Prefix::VerbatimDisk(disk) =>  String::from(char::from(disk)) + ":",
+                    _ => component.as_os_str().to_str().unwrap().to_owned()
+                };
+
+                final_path.push(element);
+            },
+            _ => final_path.push(component)
+        }
+    }
+
     match env::set_current_dir(final_path.clone()) {
         Err(e) => println!("cd: There was an error while changing directories: {}", e),
         _ => {
