@@ -1,10 +1,11 @@
 use std::fs::File;
 use std::io::{self, Write};
-use std::path::{Component, PathBuf, Prefix};
+use std::path::{Component, Path, PathBuf, Prefix};
+use std::process::Command;
 use std::{env, fs};
 
 fn main() {
-    let version_number = "0.0.6";
+    let version_number = "0.0.7";
     let mut stdout = io::stdout();
     let mut path = env::current_dir().expect("Working directory couldn't be determined.");
 
@@ -67,17 +68,76 @@ fn main() {
                 println!("Author: @FacuA0\n");
             },
             "" => (),
-            _ => println!("Command '{command}' not found. Type 'help' to show available commands."),
+            _ => {
+                if execute_local_file(&mut path, command, args.clone()).is_ok() { continue }
+                if execute_command(&mut path, command, args.clone()).is_ok() { continue }
+
+                println!("Command '{command}' not found. Type 'help' to show available commands.")
+            },
         }
     }
     
     println!("Exit");
 }
 
+fn execute_local_file(path: &mut PathBuf, command: &str, args: Vec<&str>) -> Result<(), ()> {
+    let elements = path.read_dir();
+    if elements.is_err() {
+        return Err(())
+    }
+
+    for element in elements.unwrap() {
+        if element.is_err() { continue }
+
+        let element = element.unwrap();
+        if element.metadata().is_err() { continue }
+
+        let metadata = element.metadata().unwrap();
+        if !metadata.is_file() { continue }
+
+        let file_name = element.file_name();
+        if file_name != command { continue }
+
+        let child = Command::new(element.path())
+            .args(args)
+            .spawn();
+        if let Err(error) = child {
+            if error.raw_os_error().unwrap() != 193 {
+                println!("Error invoking {:?}: {}", file_name, error);
+                return Ok(())
+            }
+
+            println!("{:?} is not an executable file.", file_name);
+            return Ok(())
+        }
+
+        child.unwrap().wait().unwrap();
+
+        return Ok(())
+    }
+
+    Err(())
+}
+
+fn execute_command(path: &mut PathBuf, command: &str, args: Vec<&str>) -> Result<(), ()> {
+    let child = Command::new(command)
+        .args(args)
+        .spawn();
+
+    if let Err(error) = child {
+        println!("Error invoking {}: {}", command, error);
+        return Err(())
+    }
+    
+    child.unwrap().wait().unwrap();
+
+    Ok(())
+}
+
 fn make_directory(path: &mut PathBuf, args: Vec<&str>) {
     if args.len() < 1 {
         println!("md: There's no name parameter.");
-        ()
+        return;
     }
     
     let name = args.join(" ");
@@ -85,12 +145,12 @@ fn make_directory(path: &mut PathBuf, args: Vec<&str>) {
     let new_path = PathBuf::from(name.clone());
     if new_path.components().count() > 1 {
         println!("md: Only a single directory can be created at a time.");
-        ()
+        return;
     }
     
     if new_path.file_name().is_none() || !new_path.starts_with(new_path.file_name().unwrap()) {
         println!("md: Invalid directory.");
-        ()
+        return;
     }
 
     let new_path = path.join(new_path);
@@ -104,7 +164,7 @@ fn make_directory(path: &mut PathBuf, args: Vec<&str>) {
 fn create_file(path: &mut PathBuf, args: Vec<&str>) {
     if args.len() < 1 {
         println!("touch: There's no name parameter.");
-        ()
+        return;
     }
     
     let name = args.join(" ");
@@ -112,18 +172,18 @@ fn create_file(path: &mut PathBuf, args: Vec<&str>) {
     let new_path = PathBuf::from(name.clone());
     if new_path.components().count() > 1 {
         println!("touch: The file name must not contain paths.");
-        ()
+        return;
     }
     
     let file_name = new_path.file_name();
     if file_name.is_none() || !new_path.starts_with(file_name.unwrap()) {
         println!("touch: Invalid file name.");
-        ()
+        return;
     }
 
     let new_path = path.join(new_path);
     if new_path.exists() {
-        ()
+        return;
     }
 
     match File::create(new_path) {
@@ -135,7 +195,7 @@ fn create_file(path: &mut PathBuf, args: Vec<&str>) {
 fn remove_element(path: &mut PathBuf, args: Vec<&str>) {
     if args.len() < 1 {
         println!("rm: There are no parameters.");
-        ()
+        return;
     }
 
     let mut recursive = false;
@@ -158,19 +218,19 @@ fn remove_element(path: &mut PathBuf, args: Vec<&str>) {
     // Still in flags mode - never got a path
     if flags {
         println!("rm: There's no path parameter.");
-        ()
+        return;
     }
 
     let dest_path = path.join(PathBuf::from(dest_path.join(" ")));
 
     if path.starts_with(&dest_path) {
         println!("rm: The current working directory is inside of the one being removed.");
-        ()
+        return;
     }
     
     if !path.exists() {
         println!("rm: The location doesn't exist.");
-        ()
+        return;
     }
 
     if dest_path.is_file() {
@@ -199,7 +259,7 @@ fn change_directory(path: &mut PathBuf, new_path: String) {
     let moving_path = path.join(PathBuf::from(new_path));
     if !moving_path.exists() || !moving_path.is_dir() {
         println!("cd: Directory doesn't exist.");
-        ()
+        return;
     }
 
     let canonical = moving_path.canonicalize().unwrap();
