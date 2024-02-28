@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io::{self, Write};
-use std::path::{Component, Path, PathBuf, Prefix};
+use std::path::{Component, PathBuf, Prefix};
 use std::process::Command;
 use std::{env, fs};
 
@@ -119,7 +119,7 @@ fn execute_local_file(path: &mut PathBuf, command: &str, args: Vec<&str>) -> Res
     Err(())
 }
 
-fn execute_command(path: &mut PathBuf, command: &str, args: Vec<&str>) -> Result<(), ()> {
+fn execute_command(_path: &mut PathBuf, command: &str, args: Vec<&str>) -> Result<(), ()> {
     let child = Command::new(command)
         .args(args)
         .spawn();
