@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{self, Write};
 use std::path::{Component, PathBuf, Prefix};
 use std::process::Command;
-use std::{env, fs};
+use std::{env, fs, time};
 
 fn main() {
     let version_number = "0.0.7";
@@ -21,7 +21,48 @@ fn main() {
         let mut value = String::new();
         io::stdin().read_line(&mut value).unwrap();
     
-        let parts: Vec<&str> = value.trim().split(" ").collect();
+        let raw_parts: Vec<&str> = value.trim().split(" ").collect();
+        let mut parts: Vec<String> = vec![];
+
+        let mut is_string = false;
+        let mut sum_string = String::new();
+
+        for part in raw_parts {
+            if part.chars().next() == Some('"') {
+                is_string = true;
+            }
+            
+            if is_string {
+                sum_string.push(' ');
+                sum_string.push_str(part);
+            }
+            else {
+                parts.push(part.to_string());
+            }
+            
+            if part.chars().last() == Some('"') {
+                if is_string {
+                    parts.push(sum_string[1..].to_string());
+                }
+
+                is_string = false;
+                sum_string.clear();
+            }
+        }
+
+        if is_string {
+            println!("Invalid syntax: Double quotes not closed.");
+            continue;
+        }
+
+        let parts = {
+            let mut str_parts: Vec<&str> = vec![];
+            for str in parts.iter() {
+                str_parts.push(str.as_str());
+            }
+
+            str_parts
+        };
 
         let command = parts[0];
         let mut args = parts.clone();
@@ -29,13 +70,7 @@ fn main() {
 
         match command {
             "cd" => {
-                if args.len() < 1 {
-                    println!("cd: There's no path parameter.");
-                    continue;
-                }
-                
-                let new_path = args.join(" ");
-                change_directory(&mut path, new_path);
+                change_directory(&mut path, args);
             },
             "ls" => {
                 list_elements(&mut path);
@@ -69,8 +104,8 @@ fn main() {
             },
             "" => (),
             _ => {
-                if execute_local_file(&mut path, command, args.clone()).is_ok() { continue }
                 if execute_command(&mut path, command, args.clone()).is_ok() { continue }
+                if execute_local_file(&mut path, command, args.clone()).is_ok() { continue }
 
                 println!("Command '{command}' not found. Type 'help' to show available commands.")
             },
@@ -81,20 +116,22 @@ fn main() {
 }
 
 fn execute_local_file(path: &mut PathBuf, command: &str, args: Vec<&str>) -> Result<(), ()> {
+    println!("Trying to locate a file to execute.");
     let elements = path.read_dir();
     if elements.is_err() {
         return Err(())
     }
 
+    let t1 = time::Instant::now();
     for element in elements.unwrap() {
         if element.is_err() { continue }
-
+        
         let element = element.unwrap();
         if element.metadata().is_err() { continue }
-
+        
         let metadata = element.metadata().unwrap();
         if !metadata.is_file() { continue }
-
+        
         let file_name = element.file_name();
         if file_name != command { continue }
 
@@ -102,30 +139,43 @@ fn execute_local_file(path: &mut PathBuf, command: &str, args: Vec<&str>) -> Res
             .args(args)
             .spawn();
         if let Err(error) = child {
+            println!("Error invoking {:?}: {}", file_name, error);
+            println!("Type: {:?}", error.kind());
             if error.raw_os_error().unwrap() != 193 {
-                println!("Error invoking {:?}: {}", file_name, error);
                 return Ok(())
+            }
+            
+            if let Some(error) = error.get_ref() {
+                println!("Inner error: {}", error);
+            }
+            else {
+                println!("No inner errors.");
             }
 
             println!("{:?} is not an executable file.", file_name);
             return Ok(())
         }
-
+        
         child.unwrap().wait().unwrap();
-
+        
         return Ok(())
     }
-
+    
+    let t2 = time::Instant::now();
+    println!("Time: {:?}", t2.duration_since(t1));
+    
     Err(())
 }
 
 fn execute_command(_path: &mut PathBuf, command: &str, args: Vec<&str>) -> Result<(), ()> {
+    println!("Trying to execute command.");
     let child = Command::new(command)
         .args(args)
         .spawn();
 
     if let Err(error) = child {
         println!("Error invoking {}: {}", command, error);
+        println!("Type: {:?}", error.kind());
         return Err(())
     }
     
@@ -255,7 +305,13 @@ fn remove_element(path: &mut PathBuf, args: Vec<&str>) {
     }
 }
 
-fn change_directory(path: &mut PathBuf, new_path: String) {
+fn change_directory(path: &mut PathBuf, args: Vec<&str>) {
+    if args.len() < 1 {
+        println!("cd: There's no path parameter.");
+        return;
+    }
+    
+    let new_path = args.join(" ");
     let moving_path = path.join(PathBuf::from(new_path));
     if !moving_path.exists() || !moving_path.is_dir() {
         println!("cd: Directory doesn't exist.");
