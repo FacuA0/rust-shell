@@ -10,7 +10,7 @@ fn main() {
     let mut path = env::current_dir().expect("Working directory couldn't be determined.");
 
     println!("Rust Shell {version_number}");
-    println!("Author: @FacuA0\n");
+    println!("Created by @FacuA0\n");
 
     loop {
         let prompt = String::from(path.to_str().unwrap()) + "> ";
@@ -94,14 +94,14 @@ fn main() {
                 println!("touch <file>   Creates a new file");
                 println!("rm [-r] <dir>  Removes an element");
                 println!("version        Shows the version information");
-                println!("exit           Exits the program");
+                println!("exit           Exits the shell");
                 println!("");
             }
-            "exit" => break,
             "version" => {
                 println!("Rust Shell {version_number}");
-                println!("Author: @FacuA0\n");
+                println!("Created by @FacuA0\n");
             },
+            "exit" => break,
             "" => (),
             _ => {
                 if execute_command(&mut path, command, args.clone()).is_ok() { continue }
@@ -138,9 +138,11 @@ fn execute_local_file(path: &mut PathBuf, command: &str, args: Vec<&str>) -> Res
         let child = Command::new(element.path())
             .args(args)
             .spawn();
+
         if let Err(error) = child {
             println!("Error invoking {:?}: {}", file_name, error);
             println!("Type: {:?}", error.kind());
+            
             if error.raw_os_error().unwrap() != 193 {
                 return Ok(())
             }
@@ -156,7 +158,8 @@ fn execute_local_file(path: &mut PathBuf, command: &str, args: Vec<&str>) -> Res
             return Ok(())
         }
         
-        child.unwrap().wait().unwrap();
+        let exit_status = child.unwrap().wait().unwrap();
+        println!("Exit status: {}", exit_status);
         
         return Ok(())
     }
@@ -179,7 +182,8 @@ fn execute_command(_path: &mut PathBuf, command: &str, args: Vec<&str>) -> Resul
         return Err(())
     }
     
-    child.unwrap().wait().unwrap();
+    let exit_status = child.unwrap().wait().unwrap();
+    println!("Exit status: {}", exit_status);
 
     Ok(())
 }
