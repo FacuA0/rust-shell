@@ -1,11 +1,11 @@
 use std::fs::File;
-use std::io::{self, Write};
+use std::io::{self, Error, ErrorKind, Write};
 use std::path::{Component, PathBuf, Prefix};
 use std::process::Command;
-use std::{env, fs, time};
+use std::{env, fs};
 
 fn main() {
-    let version_number = "0.0.7";
+    let version_number = "0.0.8";
     let mut stdout = io::stdout();
     let mut path = env::current_dir().expect("Working directory couldn't be determined.");
 
@@ -84,6 +84,9 @@ fn main() {
             "rm" => {
                 remove_element(&mut path, args);
             },
+            "cp" => {
+                copy(&mut path, args);
+            },
             "help" => {
                 println!("");
                 println!("General commands:");
@@ -116,74 +119,53 @@ fn main() {
 }
 
 fn execute_local_file(path: &mut PathBuf, command: &str, args: Vec<&str>) -> Result<(), ()> {
-    println!("Trying to locate a file to execute.");
-    let elements = path.read_dir();
-    if elements.is_err() {
+    //println!("Trying to locate a file to execute.");
+
+    let executable = path.join(PathBuf::from(command));
+    if !executable.is_file() {
         return Err(())
     }
 
-    let t1 = time::Instant::now();
-    for element in elements.unwrap() {
-        if element.is_err() { continue }
-        
-        let element = element.unwrap();
-        if element.metadata().is_err() { continue }
-        
-        let metadata = element.metadata().unwrap();
-        if !metadata.is_file() { continue }
-        
-        let file_name = element.file_name();
-        if file_name != command { continue }
+    let child = Command::new(executable)
+        .args(args)
+        .spawn();
 
-        let child = Command::new(element.path())
-            .args(args)
-            .spawn();
-
-        if let Err(error) = child {
-            println!("Error invoking {:?}: {}", file_name, error);
-            println!("Type: {:?}", error.kind());
-            
-            if error.raw_os_error().unwrap() != 193 {
-                return Ok(())
-            }
-            
-            if let Some(error) = error.get_ref() {
-                println!("Inner error: {}", error);
-            }
-            else {
-                println!("No inner errors.");
-            }
-
-            println!("{:?} is not an executable file.", file_name);
+    if let Err(error) = child {
+        println!("Error invoking {:?}: {}", command, error);
+        println!("Type: {:?}", error.kind());
+        
+        if error.raw_os_error().unwrap() != 193 {
             return Ok(())
         }
-        
-        let exit_status = child.unwrap().wait().unwrap();
-        println!("Exit status: {}", exit_status);
-        
+
+        println!("{:?} is not an executable file.", command);
         return Ok(())
     }
-    
-    let t2 = time::Instant::now();
-    println!("Time: {:?}", t2.duration_since(t1));
-    
-    Err(())
+
+    let _exit_status = child.unwrap().wait().unwrap();
+    //println!("Exit status: {}", exit_status);
+
+    Ok(())
 }
 
 fn execute_command(_path: &mut PathBuf, command: &str, args: Vec<&str>) -> Result<(), ()> {
-    println!("Trying to execute command.");
+    //println!("Trying to execute command.");
     let child = Command::new(command)
         .args(args)
         .spawn();
 
     if let Err(error) = child {
+        if error.kind() == ErrorKind::NotFound {
+            return Err(());
+        }
+
         println!("Error invoking {}: {}", command, error);
-        println!("Type: {:?}", error.kind());
-        return Err(())
+        //println!("Type: {:?}", error.kind());
+        return Ok(())
     }
     
-    let exit_status = child.unwrap().wait().unwrap();
-    println!("Exit status: {}", exit_status);
+    let _exit_status = child.unwrap().wait().unwrap();
+    //println!("Exit status: {}", exit_status);
 
     Ok(())
 }
@@ -244,6 +226,105 @@ fn create_file(path: &mut PathBuf, args: Vec<&str>) {
         Ok(_) => (),
         Err(e) => println!("touch: An error ocurred while creating the file: {}", e)
     }
+}
+
+fn copy(path: &mut PathBuf, args: Vec<&str>) {
+    if args.len() < 2 {
+        if args.len() == 0 {
+            println!("cp: There are no parameters.");
+        }
+        else {
+            println!("cp: Not enough parameters.");
+        }
+        return;
+    }
+
+    let mut source_path = PathBuf::from(args[0]);
+    let mut destination_path = PathBuf::from(args[1]);
+
+    if source_path.is_relative() {
+        source_path = path.join(source_path);
+    }
+
+    if destination_path.is_relative() {
+        destination_path = path.join(destination_path);
+    }
+
+    if !destination_path.is_dir() {
+        if destination_path.exists() {
+            println!("cp: The destination path must be a directory.");
+        }
+        else {
+            println!("cp: The destination path doesn't exist.");
+        }
+        return;
+    }
+    
+    if !source_path.exists() {
+        println!("cp: The source doesn't exist.");
+        return;
+    }
+
+    let source_name = source_path.file_name().unwrap();
+
+    if source_path.is_file() {
+        let destination_name = destination_path.join(source_name);
+
+        if source_path == destination_name {
+            println!("cd: It's not possible to copy this file on the same location.");
+            return;
+        }
+
+        if destination_name.exists() {
+            println!("cd: There's a file with the same name on the destination.");
+            return;
+        }
+
+        match fs::copy(source_path, destination_name) {
+            Ok(_) => println!("cp: 1 file copied succesfully."),
+            Err(error) => println!("There was an error copying the file: {error}")
+        }
+    }
+    else {
+        match copy_element(&source_path, &destination_path) {
+            Ok(amount) => println!("{amount} elements were copied successfully"),
+            Err(error) => println!("There was an error: {error}")
+        }
+    }
+}
+
+fn copy_element(source: &PathBuf, destination: &PathBuf) -> std::io::Result<i32> {
+    let source_name = source.file_name().unwrap();
+    let destination_name = destination.join(source_name);
+    let mut count = 0;
+    
+    if source.is_file() {
+        if *source == destination_name {
+            let err = format!("{}: Copy on the same location", source.display());
+            return Err(Error::new(ErrorKind::Other, err));
+        }
+        
+        if destination_name.exists() {
+            let err = format!("{}: Destination already exists", destination_name.display());
+            return Err(Error::new(ErrorKind::AlreadyExists, err));
+        }
+
+        fs::copy(source, destination_name)?;
+
+        count = 1;
+    }
+    else if source.is_dir() {
+        if !destination_name.exists() {
+            fs::create_dir(&destination_name)?;
+        }
+
+        for element in source.read_dir()? {
+            let element = element?;
+            count += copy_element(&element.path(), &destination_name)?;
+        }
+    }
+
+    Ok(count)
 }
 
 fn remove_element(path: &mut PathBuf, args: Vec<&str>) {
