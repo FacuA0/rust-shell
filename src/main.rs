@@ -433,32 +433,70 @@ fn change_directory(path: &mut PathBuf, args: Vec<&str>) {
 
 fn list_elements(path: &mut PathBuf) {
     let elements = path.read_dir();
-    if elements.is_err() {
-        println!("ls: There was an error listing the elements: {}", elements.unwrap_err());
+    if let Err(error) = elements {
+        println!("ls: There was an error listing the elements: {}", error);
         return;
     }
 
-    println!("\nContents of {:?}:", path.file_name().unwrap());
+    let mut files: Vec<fs::DirEntry> = vec![];
+    let mut directories: Vec<fs::DirEntry> = vec![];
+    let mut errors = 0;
 
     for element in elements.unwrap() {
         match element {
             Ok(item) => {
-                let file_name = item.file_name().to_str().unwrap().to_owned();
-                let metadata = item.metadata().unwrap();
-                let file_type = 
-                    if metadata.is_dir() {"<dir> "} 
-                    else if metadata.is_file() {"<file>"}
-                    else if metadata.is_symlink() {"<link>"}
-                    else {"<unknown>"};
+                let metadata = item.path().metadata();
+                if let Ok(metadata) = metadata {
+                    if metadata.is_file() {
+                        files.push(item);
+                    }
+                    else if metadata.is_dir() {
+                        directories.push(item);
+                    }
 
-                let size = if metadata.is_file() {
-                    format!("- ({})", format_file_length(metadata.len()))
-                } else {"".to_owned()};
-                
-                println!(" {file_type} {file_name} {size}");
+                    continue;
+                }
+
+                errors += 1;
             },
-            Err(e) => println!("Error: {}", e)
+            Err(_) => errors += 1
         }
+    }
+
+
+    let location_name = match path.file_name() {
+        Some(name) => name,
+        None => path.as_os_str()
+    };
+
+    let error_text = match errors {
+        0 => "".to_owned(),
+        _ => format!(" (including {errors} errors)")
+    };
+
+    println!("\nContents of {:?}{}:", location_name, error_text);
+
+
+    for directory in directories {
+        let file_name = directory.file_name().to_str().unwrap().to_owned();
+        let metadata = directory.metadata().unwrap();
+        let file_type = 
+            if metadata.is_symlink() {"<dir link> "} 
+            else {"<dir>      "};
+        
+        println!(" {file_type} {file_name}");
+    }
+
+    for file in files {
+        let file_name = file.file_name().to_str().unwrap().to_owned();
+        let metadata = file.metadata().unwrap();
+        let file_type = 
+            if metadata.is_symlink() {"<file link>"}
+            else {"<file>     "};
+
+        let size = format_file_length(metadata.len());
+        
+        println!(" {file_type} {file_name} - ({size})");
     }
 
     println!("");
