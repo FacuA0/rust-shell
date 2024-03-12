@@ -1,16 +1,21 @@
 use std::fs::File;
 use std::io::{self, Error, ErrorKind, Write};
 use std::path::{Component, PathBuf, Prefix};
-use std::process::Command;
+use std::process::{exit, Command};
 use std::{env, fs};
 
 fn main() {
-    let version_number = "0.0.8";
+    let version_number = "v0.0.9";
     let mut stdout = io::stdout();
     let mut path = env::current_dir().expect("Working directory couldn't be determined.");
 
-    println!("Rust Shell {version_number}");
-    println!("Created by @FacuA0\n");
+    let ftitle = "\x1B[1;31m";
+    let fversion = "\x1B[33m";
+    let fauthor = "\x1B[36m";
+    let freset = "\x1B[0m";
+
+    println!("{ftitle}Rust Shell{freset} {fversion}{version_number}{freset}");
+    println!("Created by {fauthor}@FacuA0{freset}\n");
 
     loop {
         let prompt = String::from(path.to_str().unwrap()) + "> ";
@@ -96,13 +101,14 @@ fn main() {
                 println!("md <dir>       Creates a directory");
                 println!("touch <file>   Creates a new file");
                 println!("rm [-r] <dir>  Removes an element");
+                println!("cp <src> <dst> Removes an element");
                 println!("version        Shows the version information");
                 println!("exit           Exits the shell");
                 println!("");
             }
             "version" => {
-                println!("Rust Shell {version_number}");
-                println!("Created by @FacuA0\n");
+                println!("{ftitle}Rust Shell{freset} {fversion}{version_number}{freset}");
+                println!("Created by {fauthor}@FacuA0{freset}\n");
             },
             "exit" => break,
             "" => (),
