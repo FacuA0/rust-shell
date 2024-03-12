@@ -481,10 +481,10 @@ fn list_elements(path: &mut PathBuf) {
         let file_name = directory.file_name().to_str().unwrap().to_owned();
         let metadata = directory.metadata().unwrap();
         let file_type = 
-            if metadata.is_symlink() {"<dir link> "} 
-            else {"<dir>      "};
+            if metadata.is_symlink() {"<dir link>"} 
+            else {"<dir>"};
         
-        println!(" {file_type} {file_name}");
+        println!(" {file_type:11} {file_name}");
     }
 
     for file in files {
@@ -492,36 +492,47 @@ fn list_elements(path: &mut PathBuf) {
         let metadata = file.metadata().unwrap();
         let file_type = 
             if metadata.is_symlink() {"<file link>"}
-            else {"<file>     "};
+            else {"<file>"};
 
         let size = format_file_length(metadata.len());
         
-        println!(" {file_type} {file_name} - ({size})");
+        println!(" {file_type:11} {file_name} - ({size})");
     }
 
     println!("");
 }
 
 fn format_file_length(length: u64) -> String {
+    let number = if length >= 1000 {
+        let float = length as f64;
+        let log = float.log10();
+        
+        let float = float / 10f64.powi((log as i32) / 3 * 3);
+        let truncate = 2 - (log as u32) % 3;
+
+        format!("{:.1$}", float, truncate as usize)
+    }
+    else { format!("{length}") };
+
     if length < 1000 {
-        format!("{} bytes", length)
+        format!("{} B", number)
     }
     else if length < 1_000_000 {
-        format!("{} KB", length / 1000)
+        format!("{} KB", number)
     }
     else if length < 1_000_000_000 {
-        format!("{} MB", length / 1_000_000)
+        format!("{} MB", number)
     }
     else if length < 1_000_000_000_000 {
-        format!("{} GB", length / 1_000_000_000)
+        format!("{} GB", number)
     }
     else if length < 1_000_000_000_000_000 {
-        format!("{} TB", length / 1_000_000_000_000)
+        format!("{} TB", number)
     }
     else if length < 1_000_000_000_000_000_000 {
-        format!("{} PB", length / 1_000_000_000_000_000)
+        format!("{} PB", number)
     }
     else {
-        format!("{} EB", length / 1_000_000_000_000_000_000)
+        format!("{} EB", number)
     }
 }
