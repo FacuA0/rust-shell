@@ -318,7 +318,7 @@ fn move_element(source: &PathBuf, destination: &PathBuf) -> std::io::Result<i32>
 
         for element in source.read_dir()? {
             let element = element?;
-            count += copy_element(&element.path(), &destination_name)?;
+            count += move_element(&element.path(), &destination_name)?;
         }
     }
 
@@ -408,26 +408,57 @@ fn copy_files(path: &mut PathBuf, args: Vec<&str>) {
         return;
     }
 
-    let source_name = source_path.file_name().unwrap();
-
     if source_path.is_file() {
-        let mut destination_name = destination_path.join(source_name);
+        match copy_element(&source_path, &destination_path, (yes_flag, no_flag, rename_flag)) {
+            Ok(amount) => {
+                if amount == 1 {
+                    println!("File copied successfully")
+                }
+                else {
+                    println!("File was not copied")
+                }
+            },
+            Err(error) => println!("There was an error copying the file: {error}")
+        }
+    }
+    else {
+        match copy_element(&source_path, &destination_path, (yes_flag, no_flag, rename_flag)) {
+            Ok(amount) => {
+                if amount == 1 {
+                    println!("{amount} element was copied successfully")
+                }
+                else {
+                    println!("{amount} elements were copied successfully")
+                }
+            },
+            Err(error) => println!("cp: There was an error: {error}")
+        }
+    }
+}
 
-        if source_path == destination_name {
-            println!("cp: It's not possible to copy this file on the same location.");
-            return;
+fn copy_element(source: &PathBuf, destination: &PathBuf, flags: (bool, bool, bool)) -> std::io::Result<i32> {
+    let (yes_flag, no_flag, rename_flag) = flags;
+
+    let source_name = source.file_name().unwrap();
+    let mut destination_name = destination.join(source_name);
+    let mut count = 0;
+    
+    if source.is_file() {
+        if *source == destination_name {
+            let err = format!("{}: Copy on the same location", source.display());
+            return Err(Error::new(ErrorKind::Other, err));
         }
 
         if destination_name.exists() {
             if no_flag {
-                println!("cp: This file exists on the destination.");
-                return;
+                let err = format!("{}: Destination already exists", destination_name.display());
+                return Err(Error::new(ErrorKind::AlreadyExists, err));
             }
 
             let mut rename_phase = false;
 
             if !yes_flag {
-                println!("The file '{}' exists on the destination.", source_name.to_str().unwrap());
+                println!("The file '{}' exists on the destination.", source.to_str().unwrap());
                 loop {
                     print!("Do you want to replace [y], cancel [n] or rename [r]? ");
                     io::stdout().flush().unwrap();
@@ -437,7 +468,7 @@ fn copy_files(path: &mut PathBuf, args: Vec<&str>) {
     
                     match value.trim() {
                         "y" => break,
-                        "n" => return,
+                        "n" => return Ok(0),
                         "r" => {
                             rename_phase = true;
                             break;
@@ -448,8 +479,8 @@ fn copy_files(path: &mut PathBuf, args: Vec<&str>) {
             }
 
             if rename_phase || (yes_flag && rename_flag) {
-                let base = source_path.file_stem().unwrap().to_str().unwrap();
-                let extension = match source_path.extension() {
+                let base = source.file_stem().unwrap().to_str().unwrap();
+                let extension = match source.extension() {
                     Some(extension) => format!(".{}", extension.to_str().unwrap()),
                     None => String::new()
                 };
@@ -458,48 +489,19 @@ fn copy_files(path: &mut PathBuf, args: Vec<&str>) {
                 let mut number = format!(" ({counter})");
 
                 let mut new_name = format!("{base}{number}{extension}");
-                while destination_path.join(&new_name).exists() {
+                while destination.join(&new_name).exists() {
                     counter += 1;
                     number = format!(" ({counter})");
                     new_name = format!("{base}{number}{extension}");
 
                     if counter > 10000 {
-                        println!("cp: Infinite loop while looking for a valid numbered filename.");
-                        return;
+                        let err = format!("{}: Infinite loop while looking for a valid numbered filename.", destination_name.display());
+                        return Err(Error::new(ErrorKind::Other, err));
                     }
                 }
 
-                destination_name = destination_path.join(new_name);
+                destination_name = destination.join(new_name);
             }
-        }
-
-        match fs::copy(source_path, destination_name) {
-            Ok(_) => println!("cp: File copied succesfully."),
-            Err(error) => println!("There was an error copying the file: {error}")
-        }
-    }
-    else {
-        match copy_element(&source_path, &destination_path) {
-            Ok(amount) => println!("{amount} elements were copied successfully"),
-            Err(error) => println!("There was an error: {error}")
-        }
-    }
-}
-
-fn copy_element(source: &PathBuf, destination: &PathBuf) -> std::io::Result<i32> {
-    let source_name = source.file_name().unwrap();
-    let destination_name = destination.join(source_name);
-    let mut count = 0;
-    
-    if source.is_file() {
-        if *source == destination_name {
-            let err = format!("{}: Copy on the same location", source.display());
-            return Err(Error::new(ErrorKind::Other, err));
-        }
-        
-        if destination_name.exists() {
-            let err = format!("{}: Destination already exists", destination_name.display());
-            return Err(Error::new(ErrorKind::AlreadyExists, err));
         }
 
         fs::copy(source, destination_name)?;
@@ -513,7 +515,7 @@ fn copy_element(source: &PathBuf, destination: &PathBuf) -> std::io::Result<i32>
 
         for element in source.read_dir()? {
             let element = element?;
-            count += copy_element(&element.path(), &destination_name)?;
+            count += copy_element(&element.path(), &destination_name, flags)?;
         }
     }
 
