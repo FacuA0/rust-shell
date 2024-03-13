@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::{self, Error, ErrorKind, Write};
 use std::path::{Component, PathBuf, Prefix};
-use std::process::{exit, Command};
+use std::process::Command;
 use std::{env, fs};
 
 fn main() {
@@ -89,22 +89,14 @@ fn main() {
             "rm" => {
                 remove_element(&mut path, args);
             },
+            "mv" => {
+                move_files(&mut path, args);
+            },
             "cp" => {
-                copy(&mut path, args);
+                copy_files(&mut path, args);
             },
             "help" => {
-                println!("");
-                println!("General commands:");
-                println!("cd <dir>       Changes the current directory to the one specified");
-                println!("help           Shows the available commands");
-                println!("ls             Shows all elements in a directory");
-                println!("md <dir>       Creates a directory");
-                println!("touch <file>   Creates a new file");
-                println!("rm [-r] <dir>  Removes an element");
-                println!("cp <src> <dst> Removes an element");
-                println!("version        Shows the version information");
-                println!("exit           Exits the shell");
-                println!("");
+                help_command(args);
             }
             "version" => {
                 println!("{ftitle}Rust Shell{freset} {fversion}{version_number}{freset}");
@@ -234,7 +226,7 @@ fn create_file(path: &mut PathBuf, args: Vec<&str>) {
     }
 }
 
-fn copy(path: &mut PathBuf, args: Vec<&str>) {
+fn move_files(path: &mut PathBuf, args: Vec<&str>) {
     if args.len() < 2 {
         if args.len() == 0 {
             println!("cp: There are no parameters.");
@@ -287,7 +279,106 @@ fn copy(path: &mut PathBuf, args: Vec<&str>) {
         }
 
         match fs::copy(source_path, destination_name) {
-            Ok(_) => println!("cp: 1 file copied succesfully."),
+            Ok(_) => println!("cp: File copied succesfully."),
+            Err(error) => println!("There was an error copying the file: {error}")
+        }
+    }
+    else {
+        match move_element(&source_path, &destination_path) {
+            Ok(amount) => println!("{amount} elements were copied successfully"),
+            Err(error) => println!("There was an error: {error}")
+        }
+    }
+}
+
+fn move_element(source: &PathBuf, destination: &PathBuf) -> std::io::Result<i32> {
+    let source_name = source.file_name().unwrap();
+    let destination_name = destination.join(source_name);
+    let mut count = 0;
+    
+    if source.is_file() {
+        if *source == destination_name {
+            let err = format!("{}: Copy on the same location", source.display());
+            return Err(Error::new(ErrorKind::Other, err));
+        }
+        
+        if destination_name.exists() {
+            let err = format!("{}: Destination already exists", destination_name.display());
+            return Err(Error::new(ErrorKind::AlreadyExists, err));
+        }
+
+        fs::copy(source, destination_name)?;
+
+        count = 1;
+    }
+    else if source.is_dir() {
+        if !destination_name.exists() {
+            fs::create_dir(&destination_name)?;
+        }
+
+        for element in source.read_dir()? {
+            let element = element?;
+            count += copy_element(&element.path(), &destination_name)?;
+        }
+    }
+
+    Ok(count)
+}
+
+fn copy_files(path: &mut PathBuf, args: Vec<&str>) {
+    if args.len() < 2 {
+        if args.len() == 0 {
+            println!("cp: There are no parameters.");
+        }
+        else {
+            println!("cp: Not enough parameters.");
+        }
+        return;
+    }
+
+    let mut source_path = PathBuf::from(args[0]);
+    let mut destination_path = PathBuf::from(args[1]);
+
+    if source_path.is_relative() {
+        source_path = path.join(source_path);
+    }
+
+    if destination_path.is_relative() {
+        destination_path = path.join(destination_path);
+    }
+
+    if !destination_path.is_dir() {
+        if destination_path.exists() {
+            println!("cp: The destination path must be a directory.");
+        }
+        else {
+            println!("cp: The destination path doesn't exist.");
+        }
+        return;
+    }
+    
+    if !source_path.exists() {
+        println!("cp: The source doesn't exist.");
+        return;
+    }
+
+    let source_name = source_path.file_name().unwrap();
+
+    if source_path.is_file() {
+        let destination_name = destination_path.join(source_name);
+
+        if source_path == destination_name {
+            println!("cd: It's not possible to copy this file on the same location.");
+            return;
+        }
+
+        if destination_name.exists() {
+            println!("cd: There's a file with the same name on the destination.");
+            return;
+        }
+
+        match fs::copy(source_path, destination_name) {
+            Ok(_) => println!("cp: File copied succesfully."),
             Err(error) => println!("There was an error copying the file: {error}")
         }
     }
@@ -541,4 +632,119 @@ fn format_file_length(length: u64) -> String {
     else {
         format!("{} EB", number)
     }
+}
+
+fn help_command(args: Vec<&str>) {
+    if args.len() == 0 {
+        println!("");
+        println!("General commands:");
+        println!("cd            Changes the current directory to the one specified");
+        println!("cp            Copies an element to another location");
+        println!("help          Shows the available commands");
+        println!("ls            Shows all elements in a directory");
+        println!("md            Creates a directory");
+        println!("mv            Moves an element to another location");
+        println!("touch         Creates a new file");
+        println!("rm            Removes an element");
+        println!("version       Shows the version information");
+        println!("exit          Exits the shell");
+        println!("");
+
+        return;
+    }
+
+    let command = args[0];
+    match command {
+        "cd" => {
+            println!("Command: cd <directory>");
+            println!("Description: Changes the current working directory to the one specified on the argument.");
+            println!("");
+            println!("Arguments:");
+            println!(" - <directory>      The directory where the shell should change.");
+            println!("");
+        },
+        "cp" => {
+            println!("Command: cp [-y] [-n] [-r] <source> <destination>");
+            println!("Description: Copies a specific source element (either a file or a directory) into a destination directory.");
+            println!("If a directory is specified as a source, it copies it along with its contents. Any existing directory on destination will receive the contents of the directory being copied.");
+            println!("The default behavior when a file is duplicated is to ask the user if it should be replaced, cancelled or renamed.");
+            println!("When the -y flag is used, the command will replace any destination file by default unless the -r flag is used.");
+            println!("");
+            println!("Arguments:");
+            println!(" - <source>         The source element to be copied.");
+            println!(" - <destination>    The destination directory.");
+            println!(" - [-y]             A flag that makes the operation to continue even if there are duplicate elements.");
+            println!(" - [-n]             A flag that cancels the entire operation if a single element is duplicated.");
+            println!(" - [-r]             A flag that indicates that, if an element is duplicated, it should be numbered to avoid conflicts.");
+            println!("");
+        },
+        "help" => {
+            println!("Command: help [command]");
+            println!("Description: Shows the available commands when invoked without arguments.");
+            println!("With an argument, it shows the description of a specific built-in shell command.");
+            println!("");
+            println!("Arguments:");
+            println!(" - [command]        A command to be described.");
+            println!("");
+        },
+        "ls" => {
+            println!("Command: ls");
+            println!("Description: Lists the files and directories in the current location.");
+            println!("");
+        },
+        "md" => {
+            println!("Command: md <directory>");
+            println!("Description: Creates a new directory with the specified name.");
+            println!("");
+            println!("Arguments:");
+            println!(" - <directory>      The directory name to be used.");
+            println!("");
+        },
+        "mv" => {
+            println!("Command: mv [-y] [-n] [-r] <source> <destination>");
+            println!("Description: Moves a specific source element (either a file or a directory) into a destination directory, removing any original file in the former location.");
+            println!("If a directory is specified as a source, it moves it along with its contents. Any existing directory on destination will receive the contents of the directory being moved.");
+            println!("The default behavior when a file is duplicated is to ask the user if it should be replaced, cancelled or renamed.");
+            println!("When the -y flag is used, the command will replace any destination file by default unless the -r flag is used.");
+            println!("");
+            println!("Arguments:");
+            println!(" - <source>         The source element to be moved.");
+            println!(" - <destination>    The destination directory.");
+            println!(" - [-y]             A flag that makes the operation to continue even if there are duplicate elements.");
+            println!(" - [-n]             A flag that cancels the entire operation if a single element is duplicated.");
+            println!(" - [-r]             A flag that indicates that, if an element is duplicated, it should be numbered to avoid conflicts.");
+            println!("");
+        },
+        "touch" => {
+            println!("Command: touch <file>");
+            println!("Description: Creates a new empty file with the specified name.");
+            println!("");
+            println!("Arguments:");
+            println!(" - <file>           The file name to be used.");
+            println!("");
+        },
+        "rm" => {
+            println!("Command: rm [-r] <element>");
+            println!("Description: Removes the file or directory at the specified location.");
+            println!("If a directory has inner elements, it won't be removed unless the -r flag was used.");
+            println!("");
+            println!("Arguments:");
+            println!(" - <element>        The file or directory to be removed.");
+            println!(" - [-r]             A flag that removes a directory recursively, which includes any internal files and directories in it.");
+            println!("");
+        }
+        "version" => {
+            println!("Command: version");
+            println!("Description: Prints the current version and author of the shell.");
+            println!("");
+        },
+        "exit" => {
+            println!("Command: exit");
+            println!("Description: Exits the shell.");
+            println!("");
+        },
+        _ => {
+            println!("help: There's no built-in command named '{command}'. Type 'help' to show available commands.");
+        }
+    };
 }
