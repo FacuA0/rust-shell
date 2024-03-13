@@ -229,16 +229,62 @@ fn create_file(path: &mut PathBuf, args: Vec<&str>) {
 fn move_files(path: &mut PathBuf, args: Vec<&str>) {
     if args.len() < 2 {
         if args.len() == 0 {
-            println!("cp: There are no parameters.");
+            println!("mv: There are no arguments.");
         }
         else {
-            println!("cp: Not enough parameters.");
+            println!("mv: There are not enough arguments.");
         }
         return;
     }
 
-    let mut source_path = PathBuf::from(args[0]);
-    let mut destination_path = PathBuf::from(args[1]);
+    let mut yes_flag = false;
+    let mut no_flag = false;
+    let mut rename_flag = false;
+    let mut source_path = PathBuf::new();
+    let mut destination_path = PathBuf::new();
+
+    let mut flags = true;
+    let mut mandatory_args = 0;
+
+    for arg in args {
+        if !arg.starts_with("-") {
+            flags = false;
+        }
+
+        if flags {
+            match arg {
+                "-y" => yes_flag = true,
+                "-n" => no_flag = true,
+                "-r" => rename_flag = true,
+                _ => ()
+            };
+            continue;
+        }
+
+        if mandatory_args == 0 {
+            source_path = PathBuf::from(arg);
+        }
+        else if mandatory_args == 1 {
+            destination_path = PathBuf::from(arg);
+        }
+
+        mandatory_args += 1;
+    }
+
+    if mandatory_args < 2 {
+        if mandatory_args == 0 {
+            println!("mv: Source and destination arguments weren't provided.");
+        }
+        else  {
+            println!("mv: Destination argument wasn't provided.");
+        }
+        return;
+    }
+
+    if yes_flag && no_flag {
+        println!("cp: Opposite arguments -y and -n were provided.");
+        return;
+    }
 
     if source_path.is_relative() {
         source_path = path.join(source_path);
@@ -247,67 +293,120 @@ fn move_files(path: &mut PathBuf, args: Vec<&str>) {
     if destination_path.is_relative() {
         destination_path = path.join(destination_path);
     }
+    
+    if !source_path.exists() {
+        println!("mv: The source doesn't exist.");
+        return;
+    }
 
     if !destination_path.is_dir() {
         if destination_path.exists() {
-            println!("cp: The destination path must be a directory.");
+            println!("mv: The destination path must be a directory.");
         }
         else {
-            println!("cp: The destination path doesn't exist.");
+            println!("mv: The destination path doesn't exist.");
         }
         return;
     }
-    
-    if !source_path.exists() {
-        println!("cp: The source doesn't exist.");
-        return;
-    }
-
-    let source_name = source_path.file_name().unwrap();
 
     if source_path.is_file() {
-        let destination_name = destination_path.join(source_name);
-
-        if source_path == destination_name {
-            println!("cd: It's not possible to copy this file on the same location.");
-            return;
-        }
-
-        if destination_name.exists() {
-            println!("cd: There's a file with the same name on the destination.");
-            return;
-        }
-
-        match fs::copy(source_path, destination_name) {
-            Ok(_) => println!("cp: File copied succesfully."),
-            Err(error) => println!("There was an error copying the file: {error}")
+        match move_element(&source_path, &destination_path, (yes_flag, no_flag, rename_flag)) {
+            Ok(amount) => {
+                if amount == 1 {
+                    println!("File moved successfully")
+                }
+                else {
+                    println!("File was not moved")
+                }
+            },
+            Err(error) => println!("There was an error moving the file: {error}")
         }
     }
     else {
-        match move_element(&source_path, &destination_path) {
-            Ok(amount) => println!("{amount} elements were copied successfully"),
-            Err(error) => println!("There was an error: {error}")
+        match move_element(&source_path, &destination_path, (yes_flag, no_flag, rename_flag)) {
+            Ok(amount) => {
+                if amount == 1 {
+                    println!("{amount} element was moved successfully")
+                }
+                else {
+                    println!("{amount} elements were moved successfully")
+                }
+            },
+            Err(error) => println!("mv: There was an error: {error}")
         }
     }
 }
 
-fn move_element(source: &PathBuf, destination: &PathBuf) -> std::io::Result<i32> {
+fn move_element(source: &PathBuf, destination: &PathBuf, flags: (bool, bool, bool)) -> std::io::Result<i32> {
+    let (yes_flag, no_flag, rename_flag) = flags;
+
     let source_name = source.file_name().unwrap();
-    let destination_name = destination.join(source_name);
+    let mut destination_name = destination.join(source_name);
     let mut count = 0;
     
     if source.is_file() {
         if *source == destination_name {
-            let err = format!("{}: Copy on the same location", source.display());
+            let err = format!("{}: Move to the same location", source.display());
             return Err(Error::new(ErrorKind::Other, err));
         }
-        
+
         if destination_name.exists() {
-            let err = format!("{}: Destination already exists", destination_name.display());
-            return Err(Error::new(ErrorKind::AlreadyExists, err));
+            if no_flag {
+                let err = format!("{}: Destination already exists", destination_name.display());
+                return Err(Error::new(ErrorKind::AlreadyExists, err));
+            }
+
+            let mut rename_phase = false;
+
+            if !yes_flag {
+                println!("The file '{}' exists on the destination.", source.to_str().unwrap());
+                loop {
+                    print!("Do you want to replace [y], cancel [n] or rename [r]? ");
+                    io::stdout().flush().unwrap();
+                
+                    let mut value = String::new();
+                    io::stdin().read_line(&mut value).unwrap();
+    
+                    match value.trim() {
+                        "y" => break,
+                        "n" => return Ok(0),
+                        "r" => {
+                            rename_phase = true;
+                            break;
+                        },
+                        _ => ()
+                    }
+                }
+            }
+
+            if rename_phase || (yes_flag && rename_flag) {
+                let base = source.file_stem().unwrap().to_str().unwrap();
+                let extension = match source.extension() {
+                    Some(extension) => format!(".{}", extension.to_str().unwrap()),
+                    None => String::new()
+                };
+
+                let mut counter = 2;
+                let mut number = format!(" ({counter})");
+
+                let mut new_name = format!("{base}{number}{extension}");
+                while destination.join(&new_name).exists() {
+                    counter += 1;
+                    number = format!(" ({counter})");
+                    new_name = format!("{base}{number}{extension}");
+
+                    if counter > 10000 {
+                        let err = format!("{}: Infinite loop while looking for a valid numbered filename.", destination_name.display());
+                        return Err(Error::new(ErrorKind::Other, err));
+                    }
+                }
+
+                destination_name = destination.join(new_name);
+            }
         }
 
         fs::copy(source, destination_name)?;
+        fs::remove_file(source)?;
 
         count = 1;
     }
@@ -318,8 +417,10 @@ fn move_element(source: &PathBuf, destination: &PathBuf) -> std::io::Result<i32>
 
         for element in source.read_dir()? {
             let element = element?;
-            count += move_element(&element.path(), &destination_name)?;
+            count += move_element(&element.path(), &destination_name, flags)?;
         }
+
+        fs::remove_dir(source)?;
     }
 
     Ok(count)
@@ -392,6 +493,11 @@ fn copy_files(path: &mut PathBuf, args: Vec<&str>) {
     if destination_path.is_relative() {
         destination_path = path.join(destination_path);
     }
+    
+    if !source_path.exists() {
+        println!("cp: The source doesn't exist.");
+        return;
+    }
 
     if !destination_path.is_dir() {
         if destination_path.exists() {
@@ -400,11 +506,6 @@ fn copy_files(path: &mut PathBuf, args: Vec<&str>) {
         else {
             println!("cp: The destination path doesn't exist.");
         }
-        return;
-    }
-    
-    if !source_path.exists() {
-        println!("cp: The source doesn't exist.");
         return;
     }
 
