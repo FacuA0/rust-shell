@@ -7,6 +7,8 @@
 - ```cd```: Navigate between directories.
 - ```ls```: Show the files and directories in the current location.
 - ```md```: Make a directory.
+- ```cp```: Copy a file, directory or tree to another place.
+- ```mv```: Move a file, directory or tree to another place.
 - ```touch```: Create a file.
 - ```rm```: Remove a file, a directory or a tree.
 - ```help```: Shows the available commands.
@@ -15,7 +17,7 @@
 
 ## Download and run
 
-1. First, you need to have Rust version 1.74.1 installed. Go to [the official site](https://rust-lang.com/tools/install) for instructions.
+1. First, you need to have Rust version 1.74.1 installed. Go to [the official site](https://rust-lang.com/tools/install) for instructions on how to do it.
 2. If you have Git, open a terminal and paste:
    ```sh
    git clone https://github.com/FacuA0/rust-shell.git

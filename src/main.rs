@@ -5,7 +5,7 @@ use enable_ansi_support as ansi;
 mod commands;
 
 fn main() {
-    let version_number = "v0.0.9";
+    let version_number = "v0.1.0";
     let mut stdout = io::stdout();
     let mut path = env::current_dir().expect("Working directory couldn't be determined.");
 

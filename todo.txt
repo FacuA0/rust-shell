@@ -1,7 +1,7 @@
 [x] Add file system navigation
 [X] Open path programs
 [X] Open local programs
-[-] File manipulation
-    [ ] Add cp: Copy files and directories
-    [ ] Add mv: Move/rename files and directories
-[ ] Make the command execute first, then check for the local dir if it fails.
+[x] File manipulation
+    [x] Add cp: Copy files and directories
+    [x] Add mv: Move/rename files and directories
+[x] Make the command execute first, then check for the local dir if it fails.

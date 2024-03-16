@@ -17,14 +17,15 @@ pub fn execute_local_file(path: &mut PathBuf, command: &str, args: Vec<&str>) ->
         .spawn();
 
     if let Err(error) = child {
-        println!("Error invoking {:?}: {}", command, error);
-        println!("Type: {:?}", error.kind());
-        
-        if error.raw_os_error().unwrap() != 193 {
+        let os_error = error.raw_os_error().unwrap();
+        if os_error == 193 || os_error == 8 {
+            println!("{:?} is not an executable file.", command);
             return Ok(())
         }
+        
+        println!("Error invoking {:?}: {}", command, error);
+        println!("Type: {:?}", error.kind());
 
-        println!("{:?} is not an executable file.", command);
         return Ok(())
     }
 
@@ -113,6 +114,7 @@ pub fn create_file(path: &mut PathBuf, args: Vec<&str>) {
         Err(e) => println!("touch: An error ocurred while creating the file: {}", e)
     }
 }
+
 pub fn move_files(path: &mut PathBuf, args: Vec<&str>) {
     if args.len() < 2 {
         if args.len() == 0 {
