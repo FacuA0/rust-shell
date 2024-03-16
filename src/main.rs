@@ -3,16 +3,27 @@ use std::io::{self, Error, ErrorKind, Write};
 use std::path::{Component, PathBuf, Prefix};
 use std::process::Command;
 use std::{env, fs};
+use enable_ansi_support as ansi;
 
 fn main() {
     let version_number = "v0.0.9";
     let mut stdout = io::stdout();
     let mut path = env::current_dir().expect("Working directory couldn't be determined.");
 
-    let ftitle = "\x1B[1;31m";
-    let fversion = "\x1B[33m";
-    let fauthor = "\x1B[36m";
-    let freset = "\x1B[0m";
+    let mut ftitle = "\x1B[1;31m";
+    let mut fversion = "\x1B[33m";
+    let mut fauthor = "\x1B[36m";
+    let mut freset = "\x1B[0m";
+
+    match ansi::enable_ansi_support() {
+        Err(_) => {
+            ftitle = "";
+            fversion = "";
+            fauthor = "";
+            freset = "";
+        },
+        Ok(_) => ()
+    }
 
     println!("{ftitle}Rust Shell{freset} {fversion}{version_number}{freset}");
     println!("Created by {fauthor}@FacuA0{freset}\n");
